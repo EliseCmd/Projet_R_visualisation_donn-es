@@ -1,0 +1,108 @@
+#
+# This is the user-interface definition of a Shiny web application. You can
+# run the application by clicking 'Run App' above.
+#
+# Find out more about building applications with Shiny here:
+#
+#    https://shiny.posit.co/
+#
+
+library(shiny)
+library(colourpicker)
+
+# Define UI for application that draws a histogram
+fluidPage(
+
+    # Application title
+    titlePanel("Old Faithful Geyser Data"),
+
+    # Sidebar with a slider input for number of bins
+    sidebarLayout(
+        sidebarPanel(
+            sliderInput("bins",
+                        "Number of bins:",
+                        min = 1,
+                        max = 50,
+                        value = 30),
+            colourInput(inputId = "color", label = "Couleur :"),
+            textInput(inputId = "id_text", label = "Enter a text", value = ""),
+            
+            # Sélectionner une variable à afficher
+            radioButtons(inputId = "id_radio", label = "Select one",
+                         choices = colnames(faithful)),
+            downloadLink(outputId = "download_plot", label = "Download the graph")
+            
+        ),
+        
+            
+        # Show a plot of the generated distribution
+        mainPanel(
+            plotOutput("distPlot"),
+            div(textOutput(outputId = "text"), align = "center"),
+            verbatimTextOutput(outputId = "table"),
+            dataTableOutput(outputId = "dataTable"),
+
+
+        )
+    )
+)
+
+## Server
+
+#
+# This is the server logic of a Shiny web application. You can run the
+# application by clicking 'Run App' above.
+#
+# Find out more about building applications with Shiny here:
+#
+#    https://shiny.posit.co/
+#
+
+library(shiny)
+
+# Define server logic required to draw a histogram
+function(input, output, session) {
+
+    output$distPlot <- renderPlot({
+
+        # generate bins based on input$bins from ui.R
+        x    <- faithful[,input$id_radio]
+        bins <- seq(min(x), max(x), length.out = input$bins + 1)
+
+        # draw the histogram with the specified number of bins
+        hist(x, breaks = bins, col = input$color, border = 'white',
+             xlab = 'Waiting time to next eruption (in mins)',
+             main = input$id_text)
+
+    })
+    
+    output$text <- renderText({
+      paste("Number of bins : ", input$bins)
+    })
+    
+    output$dataTable <- renderDataTable({
+      faithful
+    })
+    
+    output$table <- renderPrint({
+      summary(faithful)
+    })
+    
+    output$download_plot <- downloadHandler(
+      filename = function() {
+        paste('data-', Sys.Date(), '.jpeg', sep='')
+      }
+      content = function(con) {
+        jpeg(file = con)
+        # generate bins based on input$bins from ui.R
+        x    <- faithful[,input$id_radio]
+        bins <- seq(min(x), max(x), length.out = input$bins + 1)
+        
+        # draw the histogram with the specified number of bins
+        hist(x, breaks = bins, col = input$color, border = 'white',
+             xlab = 'Waiting time to next eruption (in mins)',
+             main = input$id_text)
+        dev.off()
+    })
+
+}
