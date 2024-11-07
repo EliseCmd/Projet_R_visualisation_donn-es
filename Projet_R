@@ -1,1 +1,72 @@
+# ui.R
+library(shiny)
+library(DT)  # Pour afficher des tables interactives
 
+# Interface utilisateur avec des onglets
+ui <- fluidPage(
+  
+  # Titre de l'application
+  titlePanel("Sportifs de Haut niveau en 2015"),
+  
+  # Ajout des onglets avec tabsetPanel
+  tabsetPanel(
+    tabPanel("Recherche", 
+             # Affichage du tableau dans l'onglet Recherche
+             mainPanel(
+               textOutput("summary"),  # Résumé des dimensions du fichier
+               DTOutput("contents")    # Table interactive
+             )
+    ),
+    
+    tabPanel("Cartes", 
+             # Ici, tu peux ajouter du contenu pour l'onglet Cartes
+             mainPanel(
+               h3("Carte à venir !")  # Placeholder pour l'instant
+             )
+    ),
+    
+    tabPanel("Statistiques", 
+             # Ici, tu peux ajouter des graphiques ou des statistiques
+             mainPanel(
+               h3("Graphiques et statistiques à venir !")  # Placeholder pour l'instant
+             )
+    )
+  )
+)
+
+# server.R
+library(shiny)
+library(openxlsx)  # Pour lire les fichiers Excel
+library(DT)        # Pour l'affichage interactif des tables
+library(leaflet)
+library(ggplot2)
+
+# Logique serveur
+server <- function(input, output) {
+  
+  # Chemin du fichier Excel (adapté à ton répertoire)
+  file_path <- "C:/Users/camil/OneDrive/Documents/Bureau/Projet_R/SHN_2015/SHN_2015_projet.xlsx"  # Assure-toi que le chemin est correct
+  
+  # Lecture du fichier Excel avec openxlsx
+  data <- read.xlsx(file_path, sheet = 1)  # Lire la première feuille du fichier
+
+
+  
+  # Afficher le contenu du fichier dans un tableau interactif
+  output$contents <- renderDT({
+    if (!is.null(data)) {
+      datatable(data, options = list(pageLength = 10))  # Affichage paginé des données
+    }
+  })
+  
+  output$maps <- renderLeaflet({
+    leaflet() %>%
+      addTiles() %>%
+      addMarkers(lng = 2.3522, lat = 48.8566, popup = "Paris")
+  })
+  
+  output$stats <- renderPlot({
+    ggplot(data, aes(x = "Sexe", y = "Club")) + geom_point() + 
+      theme_minimal()
+  })
+}
