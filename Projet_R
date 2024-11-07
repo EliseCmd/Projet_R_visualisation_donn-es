@@ -1,6 +1,7 @@
 # ui.R
 library(shiny)
 library(DT)  # Pour afficher des tables interactives
+library(leaflet)
 
 # Interface utilisateur avec des onglets
 ui <- fluidPage(
@@ -19,9 +20,9 @@ ui <- fluidPage(
     ),
     
     tabPanel("Cartes", 
-             # Ici, tu peux ajouter du contenu pour l'onglet Cartes
+             # Affichage de la carte interactive dans l'onglet Cartes
              mainPanel(
-               h3("Carte à venir !")  # Placeholder pour l'instant
+               leafletOutput("france_map", height = 600) # Ici, on ajoute la carte
              )
     ),
     
@@ -38,8 +39,8 @@ ui <- fluidPage(
 library(shiny)
 library(openxlsx)  # Pour lire les fichiers Excel
 library(DT)        # Pour l'affichage interactif des tables
-library(leaflet)
-library(ggplot2)
+library(leaflet)   # Pour créer les cartes interactives
+library(ggplot2)   # Pour les graphiques
 
 # Logique serveur
 server <- function(input, output) {
@@ -59,10 +60,12 @@ server <- function(input, output) {
     }
   })
   
-  output$maps <- renderLeaflet({
+  # Générer la carte de la France dans l'onglet Cartes
+  output$france_map <- renderLeaflet({
     leaflet() %>%
       addTiles() %>%
-      addMarkers(lng = 2.3522, lat = 48.8566, popup = "Paris")
+      setView(lng = 2.3522, lat = 48.8566, zoom = 5)  # Centrer la carte sur la France
+    
   })
   
   output$stats <- renderPlot({
