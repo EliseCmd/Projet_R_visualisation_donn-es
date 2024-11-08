@@ -24,6 +24,12 @@ ui <- fluidPage(
                  h4("Options de sélection"),
                  selectInput("variable", "Choisir une variable :",
                              choices = c("Option 1", "Option 2", "Option 3")),
+                 selectInput("fednom", "Choisir une Fédération : ",
+                             choices = c("Option 1", "Option 2", "Option 3")),
+                 selectInput("discipline", "Choisir une Discipline : ",
+                             choices = c("Option 1", "Option 2", "Option 3")),
+                 selectInput("annee", "Choisir une Plage d'année : ",
+                             choices = c("Option 1", "Option 2", "Option 3")),
                  actionButton("update", "Mettre à jour")
                ),
                mainPanel(
