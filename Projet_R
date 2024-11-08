@@ -1,35 +1,48 @@
 # ui.R
 library(shiny)
-library(DT)  # Pour afficher des tables interactives
+library(DT)
 library(leaflet)
+library(ggplot2)
 
 # Interface utilisateur avec des onglets
 ui <- fluidPage(
   
-  # Titre de l'application
   titlePanel("Sportifs de Haut niveau en 2015"),
   
-  # Ajout des onglets avec tabsetPanel
   tabsetPanel(
     tabPanel("Recherche", 
-             # Affichage du tableau dans l'onglet Recherche
              mainPanel(
-               textOutput("summary"),  # Résumé des dimensions du fichier
-               DTOutput("contents")    # Table interactive
+               textOutput("summary"), 
+               DTOutput("contents")    
              )
     ),
     
-    tabPanel("Cartes", 
-             # Affichage de la carte interactive dans l'onglet Cartes
-             mainPanel(
-               leafletOutput("france_map", height = 600) # Ici, on ajoute la carte
+    tabPanel("Cartes",
+             # Utilisation de sidebarLayout pour une colonne de sélection à gauche
+             sidebarLayout(
+               sidebarPanel(
+                 h4("Options de sélection"),
+                 selectInput("variable", "Choisir une variable :",
+                             choices = c("Option 1", "Option 2", "Option 3")),
+                 actionButton("update", "Mettre à jour")
+               ),
+               mainPanel(
+                 tabsetPanel(
+                   tabPanel("Proportion",
+                            leafletOutput("france_map_proportion", height = 500)
+                   ),
+                   tabPanel("Chiffres",
+                            leafletOutput("france_map_chiffres", height = 500)
+                   )
+                 )
+               )
              )
     ),
     
     tabPanel("Statistiques", 
-             # Ici, tu peux ajouter des graphiques ou des statistiques
              mainPanel(
-               h3("Graphiques et statistiques à venir !")  # Placeholder pour l'instant
+               h3("Graphiques et statistiques"),
+               plotOutput("stats") 
              )
     )
   )
@@ -37,39 +50,38 @@ ui <- fluidPage(
 
 # server.R
 library(shiny)
-library(openxlsx)  # Pour lire les fichiers Excel
-library(DT)        # Pour l'affichage interactif des tables
-library(leaflet)   # Pour créer les cartes interactives
-library(ggplot2)   # Pour les graphiques
+library(openxlsx)
+library(DT)
+library(leaflet)
+library(ggplot2)
 
-# Logique serveur
 server <- function(input, output) {
   
-  # Chemin du fichier Excel (adapté à ton répertoire)
-  file_path <- "C:/Users/camil/OneDrive/Documents/Bureau/Projet_R/SHN_2015/SHN_2015_projet.xlsx"  # Assure-toi que le chemin est correct
+  file_path <- "SHN_2015_projet.xlsx"  # Chemin relatif ou ajout de fonction pour upload
   
-  # Lecture du fichier Excel avec openxlsx
-  data <- read.xlsx(file_path, sheet = 1)  # Lire la première feuille du fichier
-
-
+  data <- read.xlsx(file_path, sheet = 1)  
   
-  # Afficher le contenu du fichier dans un tableau interactif
   output$contents <- renderDT({
-    if (!is.null(data)) {
-      datatable(data, options = list(pageLength = 10))  # Affichage paginé des données
-    }
+    datatable(data, options = list(pageLength = 10))
   })
   
-  # Générer la carte de la France dans l'onglet Cartes
-  output$france_map <- renderLeaflet({
+  # Carte pour l'onglet Proportion
+  output$france_map_proportion <- renderLeaflet({
     leaflet() %>%
       addTiles() %>%
-      setView(lng = 2.3522, lat = 48.8566, zoom = 5)  # Centrer la carte sur la France
-    
+      setView(lng = 2.3522, lat = 48.8566, zoom = 5)
+  })
+  
+  # Carte pour l'onglet Chiffres
+  output$france_map_chiffres <- renderLeaflet({
+    leaflet() %>%
+      addTiles() %>%
+      setView(lng = 2.3522, lat = 48.8566, zoom = 5)
   })
   
   output$stats <- renderPlot({
-    ggplot(data, aes(x = "Sexe", y = "Club")) + geom_point() + 
+    ggplot(data, aes(x = Sexe, y = Club)) + 
+      geom_point() + 
       theme_minimal()
   })
 }
