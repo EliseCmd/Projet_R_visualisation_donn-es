@@ -3,7 +3,9 @@ library(shiny)
 library(DT)
 library(leaflet)
 library(ggplot2)
-
+library(dplyr)
+library(sf)
+library(readxl)
 # Interface utilisateur avec des onglets
 ui <- fluidPage(
   
@@ -22,20 +24,18 @@ ui <- fluidPage(
              sidebarLayout(
                sidebarPanel(
                  h4("Options de sélection"),
-                 selectInput("variable", "Choisir une variable :",
-                             choices = c("Option 1", "Option 2", "Option 3")),
-                 selectInput("fednom", "Choisir une Fédération : ",
-                             choices = c("Option 1", "Option 2", "Option 3")),
-                 selectInput("discipline", "Choisir une Discipline : ",
-                             choices = c("Option 1", "Option 2", "Option 3")),
-                 selectInput("annee", "Choisir une Plage d'année : ",
-                             choices = c("Option 1", "Option 2", "Option 3")),
-                 actionButton("update", "Mettre à jour")
+                 selectInput("variable", "Choisissez un paramètre :", 
+                 choices = c("Fédération" = "FedNom", 
+                             "Sexe" = "Sexe", 
+                             "Catégorie" = "Catlib")),
+               
+               # Affichage dynamique des valeurs de la variable sélectionnée
+               uiOutput("value_selector")
                ),
                mainPanel(
                  tabsetPanel(
                    tabPanel("Proportion",
-                            leafletOutput("france_map_proportion", height = 500)
+                            leafletOutput("carte_interactive")
                    ),
                    tabPanel("Chiffres",
                             leafletOutput("france_map_chiffres", height = 500)
@@ -46,29 +46,61 @@ ui <- fluidPage(
     ),
     
     tabPanel("Statistiques", 
-             mainPanel(
-               h3("Graphiques et statistiques"),
-               plotOutput("stats") 
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput("variable_croisee", 
+                             "Sélectionnez la variable pour croiser avec Sexe :", 
+                             choices = c("Discipline", "RegionLib"),
+                             selected = "Discipline"),
+                 selectInput("var_croisee", 
+                             "Sélectionnez la variable pour croiser avec le nombre d'ahtlètes:", 
+                             choices = c("FedNom", "Catlib","Club"),
+                             selected = "FedNom"),
+                 helpText("Le tableau ci-dessous montre la répartition des athlètes par sexe en fonction de la variable sélectionnée.")
+               ),
+               
+               mainPanel(
+                 plotOutput("graphique_croise"),
+                 plotOutput("histogramme"),
+                 #Premier camembert : Répartition des athlètes par club
+                 h4("Nombre d'athlètes par Club"),
+                 plotOutput("camembert_club"),
+                 
+                 # Deuxième camembert : Répartition des athlètes par région/discipline
+                 h4("Athlètes dans les clubs les plus populaires par Région ou Discipline"),
+                 plotOutput("camembert_variable")
+               )
              )
-    )
+    ),
+    
+
+    
   )
 )
 
 # server.R
 library(shiny)
 library(openxlsx)
+library(readxl)
 library(DT)
 library(leaflet)
 library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(sf)
 
-server <- function(input, output) {
+
+server <- function(input, output,session) {
   
-  file_path <- "SHN_2015_projet.xlsx"  # Chemin relatif ou ajout de fonction pour upload
+  data<-read_excel("../DataSet_sportifs_haut_niveau2015.xlsx")
+  data<-data|>select(-"SHN_Id",-"Fin de droits",-"Date début")
   
-  data <- read.xlsx(file_path, sheet = 1)  
+  #file_path <- "SHN_2015_projet.xlsx"  # Chemin relatif ou ajout de fonction pour upload
+  
+ # data <- read.xlsx(file_path, sheet = 1)  
   
   output$contents <- renderDT({
-    datatable(data, options = list(pageLength = 10))
+    datatable(data, options = list(pageLength = 10),filter = "top" )
   })
   
   # Carte pour l'onglet Proportion
@@ -90,4 +122,97 @@ server <- function(input, output) {
       geom_point() + 
       theme_minimal()
   })
+  
+  output$graphique_croise <- renderPlot({
+    data_croise<-data %>% 
+      group_by_at(vars("Sexe", input$variable_croisee)) %>% 
+      summarise(Effectif = n())
+    
+    # Création du graphique avec ggplot2
+    
+    ggplot(data_croise, aes_string(x = input$variable_croisee, y = "Effectif", fill = "Sexe")) +
+      geom_bar(stat = "identity", position = "dodge") +
+      labs(x = input$variable_croisee, y = "Nombre d'athlètes", title = paste("Répartition par sexe et", input$variable_croisee)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_fill_manual(values = c("blue", "pink"))
+  })
+  
+  
+  # Graphique histogramme : Nombre d'athlètes par fédération
+  output$histogramme <- renderPlot({
+    ggplot(data, aes_string(x = input$var_croisee)) + 
+      geom_bar(fill = "blue", color = "black") +
+      labs(
+        title = "Nombre d'athlètes par variable sélectionnée",
+        x = input$var_croisee,
+        y = "Nombre d'athlètes"
+      ) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Pour éviter le chevauchement des labels
+  })
+  
+  departements <- st_read("../coordonnees_departements.geojson")
+  
+  # Compter le nombre d'athlètes par département (ou région si vous utilisez RegLib)
+  data_count <- data %>%
+    count(DepLib) %>%
+    rename(n_athletes = n)  # Renommer la colonne pour plus de clarté
+  
+  departements <- departements %>%
+    mutate(nom = toupper(nom))
+  
+  # Carte interactive avec choix de paramètres
+  output$value_selector <- renderUI({
+    selectInput("value", 
+                label = paste("Choisissez une valeur pour", input$variable),
+                choices = unique(data[[input$variable]]), 
+                selected = unique(data[[input$variable]])[1])
+  })
+  
+  # Filtrer les données d'athlètes en fonction des sélections utilisateur
+  filtered_data <- reactive({
+    req(input$value)
+    data %>%
+      filter(get(input$variable) == input$value) %>%
+      count(DepLib) %>%
+      rename(n_athletes = n)
+  })
+  
+  # Joindre les données géographiques avec les données d'athlètes filtrées
+  departements_data <- reactive({
+    departements %>%
+      left_join(filtered_data(), by = c("nom" = "DepLib")) %>%
+      mutate(n_athletes = ifelse(is.na(n_athletes), 0, n_athletes))
+  })
+  
+  # Affichage de la carte interactive
+  output$carte_interactive <- renderLeaflet({
+    leaflet(data = departements) %>%
+      addProviderTiles(providers$CartoDB.Positron)
+  })
+  
+  # Mise à jour des polygones de la carte en fonction des filtres
+  observe({
+    leafletProxy("carte_interactive", data = departements_data()) %>%
+      clearShapes() %>%
+      addPolygons(
+        fillColor = ~colorNumeric("Blues", n_athletes)(n_athletes),
+        color = "white",
+        weight = 1,
+        opacity = 1,
+        fillOpacity = 0.7,
+        label = ~paste0(nom, ": ", n_athletes, " athlètes"),
+        highlightOptions = highlightOptions(weight = 3, color = "black", bringToFront = TRUE)
+      ) %>%
+      addLegend(
+        pal = colorNumeric("Blues", departements_data()$n_athletes),
+        values = ~n_athletes,
+        title = "Nombre d'athlètes",
+        position = "bottomright"
+      )
+  })
+
+  
+
 }
