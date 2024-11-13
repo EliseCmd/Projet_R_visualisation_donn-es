@@ -6,6 +6,7 @@ library(ggplot2)
 library(dplyr)
 library(sf)
 library(readxl)
+library(plotly)
 # Interface utilisateur avec des onglets
 ui <- fluidPage(
   
@@ -25,12 +26,11 @@ ui <- fluidPage(
                sidebarPanel(
                  h4("Options de sélection"),
                  selectInput("variable", "Choisissez un paramètre :", 
-                 choices = c("Fédération" = "FedNom", 
-                             "Sexe" = "Sexe", 
-                             "Catégorie" = "Catlib")),
-               
-               # Affichage dynamique des valeurs de la variable sélectionnée
-               uiOutput("value_selector")
+                             choices = c("Fédération" = "Federation", 
+                                         "Catégorie" = "Categorie")),
+                 
+                 # Affichage dynamique des valeurs de la variable sélectionnée
+                 uiOutput("value_selector")
                ),
                mainPanel(
                  tabsetPanel(
@@ -46,37 +46,51 @@ ui <- fluidPage(
     ),
     
     tabPanel("Statistiques", 
-             sidebarLayout(
-               sidebarPanel(
-                 selectInput("variable_croisee", 
-                             "Sélectionnez la variable pour croiser avec Sexe :", 
-                             choices = c("Discipline", "RegionLib"),
-                             selected = "Discipline"),
-                 selectInput("var_croisee", 
-                             "Sélectionnez la variable pour croiser avec le nombre d'ahtlètes:", 
-                             choices = c("FedNom", "Catlib","Club"),
-                             selected = "FedNom"),
-                 helpText("Le tableau ci-dessous montre la répartition des athlètes par sexe en fonction de la variable sélectionnée.")
-               ),
-               
-               mainPanel(
-                 plotOutput("graphique_croise"),
-                 plotOutput("histogramme"),
-                 #Premier camembert : Répartition des athlètes par club
-                 h4("Nombre d'athlètes par Club"),
-                 plotOutput("camembert_club"),
+             mainPanel(
+               tabsetPanel(
                  
-                 # Deuxième camembert : Répartition des athlètes par région/discipline
-                 h4("Athlètes dans les clubs les plus populaires par Région ou Discipline"),
-                 plotOutput("camembert_variable")
+                 # Onglet pour l'évolution temporelle des athlètes
+                 tabPanel("Evolution temporelle",
+                          sidebarLayout(
+                            # Panneau latéral pour les filtres dans l'onglet "Evolution temporelle"
+                            sidebarPanel(
+                              selectInput("view_type", "Choisissez une vue :", 
+                                          choices = c("Global" = "global", 
+                                                      "Par Région" = "Region", 
+                                                      "Par Département" = "Departement")),
+                              uiOutput("filter_selector")  # Sélection dynamique de la région ou du département
+                            ),
+                            
+                            # Panneau principal pour le graphique de l'onglet "Evolution temporelle"
+                            mainPanel(
+                              plotlyOutput("evolution_plot", width = "500px")
+                            )
+                          )
+                 ),
+                 
+                 # Onglet pour la répartition des athlètes par catégorie, région, ou département
+                 tabPanel("Répartition",
+                          sidebarLayout(
+                            # Panneau latéral pour les filtres dans l'onglet "Répartition"
+                            sidebarPanel(
+                              selectInput("repartition_filter", "Choisissez un filtre :", 
+                                          choices = c("Catégorie" = "Categorie", 
+                                                      "Région" = "Region", 
+                                                      "Département" = "Departement"),
+                                          selected = "Categorie"),width = 4
+                            ),
+                            
+                            # Panneau principal pour le graphique de répartition
+                            mainPanel(
+                              plotlyOutput("repartition_plot",width="400px")
+                            )
+                          )
+                 )
                )
              )
-    ),
-    
-
-    
-  )
-)
+    )
+    )
+    )
 
 # server.R
 library(shiny)
@@ -88,80 +102,112 @@ library(ggplot2)
 library(tidyverse)
 library(dplyr)
 library(sf)
-
+library(plotly)
 
 server <- function(input, output,session) {
   
-  data<-read_excel("../DataSet_sportifs_haut_niveau2015.xlsx")
-  data<-data|>select(-"SHN_Id",-"Fin de droits",-"Date début")
-  
-  #file_path <- "SHN_2015_projet.xlsx"  # Chemin relatif ou ajout de fonction pour upload
-  
- # data <- read.xlsx(file_path, sheet = 1)  
-  
+  data<-read_excel("donnees/SHN_2015_2024_complet.xlsx")
+
   output$contents <- renderDT({
     datatable(data, options = list(pageLength = 10),filter = "top" )
   })
   
-  # Carte pour l'onglet Proportion
-  output$france_map_proportion <- renderLeaflet({
-    leaflet() %>%
-      addTiles() %>%
-      setView(lng = 2.3522, lat = 48.8566, zoom = 5)
+  
+  data_filtered <- reactive({
+    data %>%
+      filter(Annee >= 2014 & Annee <= 2024)  # Filtrer les années de 2014 à 2024
   })
   
-  # Carte pour l'onglet Chiffres
-  output$france_map_chiffres <- renderLeaflet({
-    leaflet() %>%
-      addTiles() %>%
-      setView(lng = 2.3522, lat = 48.8566, zoom = 5)
+  # Dynamiser la sélection en fonction du type de vue choisi (Région ou Département)
+  output$filter_selector <- renderUI({
+    if (input$view_type == "Region") {
+      selectInput("region_choice", "Choisissez une région :", 
+                  choices = unique(data$Region), 
+                  selected = unique(data$Region)[1])
+    } else if (input$view_type == "Departement") {
+      selectInput("departement_choice", "Choisissez un département :", 
+                  choices = unique(data$Departement), 
+                  selected = unique(data$Departement)[1])
+    }
   })
   
-  output$stats <- renderPlot({
-    ggplot(data, aes(x = Sexe, y = Club)) + 
-      geom_point() + 
-      theme_minimal()
+  # Générer le graphique en fonction des filtres
+  output$evolution_plot <- renderPlotly({
+    # Filtrage selon la vue choisie
+    if (input$view_type == "global") {
+      data_filtered() %>%
+        count(Annee) %>%
+        ggplot(aes(x = Annee, y = n)) +
+        geom_line(color = "blue", size = 1) +
+        geom_point(color = "red", size = 2) +
+        scale_x_continuous(breaks = seq(2014, 2024, 1)) +  # Afficher toutes les années de 2014 à 2024
+        labs(title = "Évolution du nombre d'athlètes par année (Global)",
+             x = "Année", y = "Nombre d'athlètes")
+      
+    } else if (input$view_type == "Region") {
+      data_filtered() %>%
+        filter(Region == input$region_choice) %>%
+        count(Annee) %>%
+        ggplot(aes(x = Annee, y = n, group = 1)) +
+        geom_line(color = "blue", size = 1) +
+        geom_point(color = "red", size = 2) +
+        scale_x_continuous(breaks = seq(2014, 2024, 1)) +  # Afficher toutes les années de 2014 à 2024
+        labs(title = paste("Évolution du nombre d'athlètes par année - Région :", input$region_choice),
+             x = "Année", y = "Nombre d'athlètes")
+      
+    } else if (input$view_type == "Departement") {
+      data_filtered() %>%
+        filter(Departement == input$departement_choice) %>%
+        count(Annee) %>%
+        ggplot(aes(x = Annee, y = n, group = 1)) +
+        geom_line(color = "blue", size = 1) +
+        geom_point(color = "red", size = 2) +
+        scale_x_continuous(breaks = seq(2014, 2024, 1)) +  # Afficher toutes les années de 2014 à 2024
+        labs(title = paste("Évolution du nombre d'athlètes par année - Département :", input$departement_choice),
+             x = "Année", y = "Nombre d'athlètes")
+    }
   })
   
-  output$graphique_croise <- renderPlot({
-    data_croise<-data %>% 
-      group_by_at(vars("Sexe", input$variable_croisee)) %>% 
-      summarise(Effectif = n())
+  
+  #deuxième graphique
+  
+  # Données réactives en fonction du filtre sélectionné
+  repartition_data <- reactive({
+    req(input$repartition_filter)
     
-    # Création du graphique avec ggplot2
-    
-    ggplot(data_croise, aes_string(x = input$variable_croisee, y = "Effectif", fill = "Sexe")) +
-      geom_bar(stat = "identity", position = "dodge") +
-      labs(x = input$variable_croisee, y = "Nombre d'athlètes", title = paste("Répartition par sexe et", input$variable_croisee)) +
-      theme_minimal() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-      scale_fill_manual(values = c("blue", "pink"))
+    # Regrouper les données en fonction du filtre sélectionné
+    data %>%
+      group_by_at(input$repartition_filter) %>%
+      summarise(n_athletes = n()) %>%
+      arrange(desc(n_athletes))
   })
   
-  
-  # Graphique histogramme : Nombre d'athlètes par fédération
-  output$histogramme <- renderPlot({
-    ggplot(data, aes_string(x = input$var_croisee)) + 
-      geom_bar(fill = "blue", color = "black") +
+  # Graphique de répartition
+  output$repartition_plot <- renderPlotly({
+    # Créer le graphique avec ggplot
+    p <- ggplot(repartition_data(), aes_string(x = input$repartition_filter, y = "n_athletes")) +
+      geom_bar(stat = "identity", fill = "skyblue") +
       labs(
-        title = "Nombre d'athlètes par variable sélectionnée",
-        x = input$var_croisee,
-        y = "Nombre d'athlètes"
+        x = input$repartition_filter,
+        y = "Nombre d'athlètes",
+        title = paste("Répartition des athlètes par", input$repartition_filter)
       ) +
       theme_minimal() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Pour éviter le chevauchement des labels
-  })
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des étiquettes pour lisibilité
+    
+    # Rendre le graphique interactif avec ggplotly
+    ggplotly(p)
+    })
   
-  departements <- st_read("../coordonnees_departements.geojson")
   
-  # Compter le nombre d'athlètes par département (ou région si vous utilisez RegLib)
-  data_count <- data %>%
-    count(DepLib) %>%
-    rename(n_athletes = n)  # Renommer la colonne pour plus de clarté
+  #Carte
   
-  departements <- departements %>%
+  departements <- st_read("donnees/coordonnees_departements.geojson")
+  
+   departements <- departements %>%
     mutate(nom = toupper(nom))
-  
+   data <- data %>%
+     mutate(Departement = toupper(Departement))
   # Carte interactive avec choix de paramètres
   output$value_selector <- renderUI({
     selectInput("value", 
@@ -175,14 +221,14 @@ server <- function(input, output,session) {
     req(input$value)
     data %>%
       filter(get(input$variable) == input$value) %>%
-      count(DepLib) %>%
+      count(Departement) %>%
       rename(n_athletes = n)
   })
   
   # Joindre les données géographiques avec les données d'athlètes filtrées
   departements_data <- reactive({
     departements %>%
-      left_join(filtered_data(), by = c("nom" = "DepLib")) %>%
+      left_join(filtered_data(), by = c("nom" = "Departement")) %>%
       mutate(n_athletes = ifelse(is.na(n_athletes), 0, n_athletes))
   })
   
@@ -212,7 +258,5 @@ server <- function(input, output,session) {
         position = "bottomright"
       )
   })
-
-  
-
+    
 }
